@@ -1,0 +1,200 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+/**************** ENUMS ****************/
+
+enum class VehicleType { TWO = 2, FOUR = 4 };
+enum class SlotType { SLOT_2 = 2, SLOT_4 = 4 };
+
+
+/**************** VEHICLE ****************/
+
+class Vehicle {
+    string plate;
+    VehicleType type;
+
+public:
+    Vehicle(string p, VehicleType t) : plate(p), type(t) {}
+
+    VehicleType getType() const { return type; }
+    string getPlate() const { return plate; }
+};
+
+
+/**************** TICKET ****************/
+
+class Ticket {
+    string ticketId;
+    int row, col;
+    time_t startTime;
+
+public:
+    Ticket(string id, int r, int c, time_t start)
+        : ticketId(id), row(r), col(c), startTime(start) {}
+
+    string getId() const { return ticketId; }
+    int getRow() const { return row; }
+    int getCol() const { return col; }
+    time_t getStartTime() const { return startTime; }
+};
+
+
+/**************** SLOT ****************/
+
+class Slot {
+    int row, col;
+    SlotType slotType;
+    bool free;
+    Vehicle* parkedVehicle;
+
+public:
+    Slot(int r, int c, SlotType t)
+        : row(r), col(c), slotType(t), free(true), parkedVehicle(nullptr) {}
+
+    bool isFree() const { return free; }
+    int getRow() const { return row; }
+    int getCol() const { return col; }
+
+    bool canFit(Vehicle* v) {
+        return static_cast<int>(v->getType()) == static_cast<int>(slotType);
+    }
+
+    void park(Vehicle* v) {
+        parkedVehicle = v;
+        free = false;
+    }
+
+    void unpark() {
+        parkedVehicle = nullptr;
+        free = true;
+    }
+};
+
+
+/**************** PARKING LOT ****************/
+
+class ParkingLot {
+    string lotId;
+    vector<vector<Slot>> grid;
+
+    const int rate2W = 10;  // ₹10 per hour
+    const int rate4W = 20;  // ₹20 per hour
+
+public:
+    ParkingLot(string id) : lotId(id) {
+        // Build 2x2 grid (2W, 4W alternation)
+        grid = {
+            { Slot(0,0, SlotType::SLOT_2), Slot(0,1, SlotType::SLOT_4) },
+            { Slot(1,0, SlotType::SLOT_2), Slot(1,1, SlotType::SLOT_4) }
+        };
+    }
+
+    Ticket* parkVehicle(Vehicle* v) {
+        for (auto& row : grid) {
+            for (auto& slot : row) {
+                if (slot.isFree() && slot.canFit(v)) {
+
+                    slot.park(v);
+
+                    time_t now = time(nullptr);
+
+                    string ticketStr = lotId + "_R" + to_string(slot.getRow()) +
+                                       "_C" + to_string(slot.getCol());
+
+                    return new Ticket(ticketStr, slot.getRow(), slot.getCol(), now);
+                }
+            }
+        }
+        cout << "No free slot available for this vehicle type!" << endl;
+        return nullptr;
+    }
+
+    int checkout(Ticket* t, VehicleType type) {
+        Slot& slot = grid[t->getRow()][t->getCol()];
+
+        time_t endTime = time(nullptr);
+        double diffSeconds = difftime(endTime, t->getStartTime());
+        int hours = ceil(diffSeconds / 3600.0);
+
+        int rate = (type == VehicleType::TWO) ? rate2W : rate4W;
+        int amount = hours * rate;
+
+        slot.unpark();
+        return amount;
+    }
+};
+
+
+/**************** MAIN (DEMO) ****************/
+
+int main() {
+    ParkingLot lot("LOT001");
+
+    Vehicle* bike = new Vehicle("MH12BX9999", VehicleType::TWO);
+    Vehicle* car  = new Vehicle("MH12AB1111", VehicleType::FOUR);
+
+    Vehicle* b1 = new Vehicle("MH12AB1111", VehicleType::TWO);
+    Vehicle* b2 = new Vehicle("MH14CD2222", VehicleType::TWO);
+    Vehicle* b3 = new Vehicle("MH16EF3333", VehicleType::TWO);
+
+    Ticket* t4= lot.parkVehicle(b1);
+    if (t4)
+        cout << "Bike1 Ticket: " << t4->getId() << endl;
+            sleep(5);
+
+     if (t4 != nullptr) {
+        int feeBike = lot.checkout(t4, VehicleType::TWO);
+        cout << "Bike1 Parking Fee: ₹" << feeBike << endl;
+    } else {
+        cout << "Bike1 could not be parked. No fee calculation." << endl;
+    }   
+     Ticket* t5= lot.parkVehicle(b2);
+    if (t5)
+        cout << "Bike1 Ticket: " << t5->getId() << endl;
+            sleep(5);
+
+     if (t5 != nullptr) {
+        int feeBike = lot.checkout(t5, VehicleType::TWO);
+        cout << "Bike2 Parking Fee: ₹" << feeBike << endl;
+    } else {
+        cout << "Bike2 could not be parked. No fee calculation." << endl;
+    } 
+    
+     Ticket* t6= lot.parkVehicle(b3);
+    if (t6)
+        cout << "Bik3 Ticket: " << t6->getId() << endl;
+            sleep(2);
+
+     if (t6 != nullptr) {
+        int feeBike = lot.checkout(t6, VehicleType::TWO);
+        cout << "Bike3 Parking Fee: ₹" << feeBike << endl;
+    } else {
+        cout << "Bike3 could not be parked. No fee calculation." << endl;
+    } 
+
+    Ticket* t1 = lot.parkVehicle(bike);
+    if (t1)
+        cout << "Bike Ticket: " << t1->getId() << endl;
+
+    Ticket* t2 = lot.parkVehicle(car);
+    if (t2)
+        cout << "Car Ticket: " << t2->getId() << endl;
+
+    sleep(3);
+
+    if (t1 != nullptr) {
+        int feeBike = lot.checkout(t1, VehicleType::TWO);
+        cout << "Bike Parking Fee: ₹" << feeBike << endl;
+    } else {
+        cout << "Bike could not be parked. No fee calculation." << endl;
+    }
+
+    if (t2 != nullptr) {
+        int feeCar = lot.checkout(t2, VehicleType::FOUR);
+        cout << "Car Parking Fee: ₹" << feeCar << endl;
+    } else {
+        cout << "Car could not be parked. No fee calculation." << endl;
+    }
+
+    return 0;
+}
