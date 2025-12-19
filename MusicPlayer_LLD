@@ -1,0 +1,320 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+/* ===================== ENUMS ===================== */
+enum class DeviceType { BLUETOOTH, WIRED, HEADPHONES };
+enum class PlayStrategyType { SEQUENTIAL, RANDOM, CUSTOM_QUEUE };
+
+/* ===================== MODELS ===================== */
+class Song {
+    string title, artist, filePath;
+public:
+    Song(string t, string a, string f) : title(t), artist(a), filePath(f) {}
+    string getTitle() const { return title; }
+    string getArtist() const { return artist; }
+    string getFilePath() const { return filePath; }
+};
+
+class Playlist {
+    string name;
+    vector<Song*> songs;
+public:
+    Playlist(string n) : name(n) {}
+    string getPlaylistName() const { return name; }
+    const vector<Song*>& getSongs() const { return songs; }
+    int getSize() const { return songs.size(); }
+    void addSong(Song* s) {
+        if (!s) throw runtime_error("Null song");
+        songs.push_back(s);
+    }
+};
+
+/* ===================== EXTERNAL DEVICES ===================== */
+class BluetoothSpeakerAPI {
+public:
+    void playSoundViaBluetooth(const string& data) {
+        cout << "[Bluetooth] Playing: " << data << "\n";
+    }
+};
+
+class WiredSpeakerAPI {
+public:
+    void playSoundViaCable(const string& data) {
+        cout << "[Wired Speaker] Playing: " << data << "\n";
+    }
+};
+
+class HeadphonesAPI {
+public:
+    void playSoundViaJack(const string& data) {
+        cout << "[Headphones] Playing: " << data << "\n";
+    }
+};
+
+/* ===================== AUDIO DEVICE INTERFACE ===================== */
+class IAudioOutputDevice {
+public:
+    virtual void playAudio(Song* song) = 0;
+    virtual ~IAudioOutputDevice() {}
+};
+
+/* ===================== ADAPTERS ===================== */
+class BluetoothSpeakerAdapter : public IAudioOutputDevice {
+    BluetoothSpeakerAPI* api;
+public:
+    BluetoothSpeakerAdapter() { api = new BluetoothSpeakerAPI(); }
+    void playAudio(Song* song) override {
+        api->playSoundViaBluetooth(song->getTitle() + " by " + song->getArtist());
+    }
+};
+
+class WiredSpeakerAdapter : public IAudioOutputDevice {
+    WiredSpeakerAPI* api;
+public:
+    WiredSpeakerAdapter() { api = new WiredSpeakerAPI(); }
+    void playAudio(Song* song) override {
+        api->playSoundViaCable(song->getTitle() + " by " + song->getArtist());
+    }
+};
+
+class HeadphonesAdapter : public IAudioOutputDevice {
+    HeadphonesAPI* api;
+public:
+    HeadphonesAdapter() { api = new HeadphonesAPI(); }
+    void playAudio(Song* song) override {
+        api->playSoundViaJack(song->getTitle() + " by " + song->getArtist());
+    }
+};
+
+/* ===================== DEVICE FACTORY ===================== */
+class DeviceFactory {
+public:
+    static IAudioOutputDevice* create(DeviceType type) {
+        if (type == DeviceType::BLUETOOTH) return new BluetoothSpeakerAdapter();
+        if (type == DeviceType::WIRED) return new WiredSpeakerAdapter();
+        return new HeadphonesAdapter();
+    }
+};
+
+/* ===================== DEVICE MANAGER (SINGLETON) ===================== */
+class DeviceManager {
+    static DeviceManager* instance;
+    IAudioOutputDevice* device;
+    DeviceManager() : device(nullptr) {}
+public:
+    static DeviceManager* getInstance() {
+        if (!instance) instance = new DeviceManager();
+        return instance;
+    }
+    void connect(DeviceType type) {
+        if (device) delete device;
+        device = DeviceFactory::create(type);
+        cout << "Device connected\n";
+    }
+    IAudioOutputDevice* getDevice() {
+        if (!device) throw runtime_error("No device connected");
+        return device;
+    }
+    bool hasDevice() { return device != nullptr; }
+};
+DeviceManager* DeviceManager::instance = nullptr;
+
+/* ===================== AUDIO ENGINE ===================== */
+class AudioEngine {
+    Song* current;
+    bool paused;
+public:
+    AudioEngine() : current(nullptr), paused(false) {}
+    void play(IAudioOutputDevice* dev, Song* song) {
+        if (!song) throw runtime_error("Null song");
+        if (paused && song == current) {
+            paused = false;
+            cout << "Resuming: " << song->getTitle() << "\n";
+        } else {
+            current = song;
+            paused = false;
+            cout << "Playing: " << song->getTitle() << "\n";
+        }
+        dev->playAudio(song);
+    }
+    void pause() {
+        if (!current) throw runtime_error("Nothing playing");
+        paused = true;
+        cout << "Paused: " << current->getTitle() << "\n";
+    }
+    string currentSong() { return current ? current->getTitle() : ""; }
+};
+
+/* ===================== PLAY STRATEGY ===================== */
+class PlayStrategy {
+public:
+    virtual void setPlaylist(Playlist*) = 0;
+    virtual bool hasNext() = 0;
+    virtual Song* next() = 0;
+    virtual bool hasPrevious() = 0;
+    virtual Song* previous() = 0;
+    virtual void addToNext(Song*) {}
+    virtual ~PlayStrategy() {}
+};
+
+/* ===================== STRATEGIES ===================== */
+class SequentialPlayStrategy : public PlayStrategy {
+    Playlist* playlist;
+    int idx;
+public:
+    SequentialPlayStrategy() : playlist(nullptr), idx(-1) {}
+    void setPlaylist(Playlist* p) override { playlist = p; idx = -1; }
+    bool hasNext() override { return idx + 1 < playlist->getSize(); }
+    Song* next() override { return playlist->getSongs()[++idx]; }
+    bool hasPrevious() override { return idx > 0; }
+    Song* previous() override { return playlist->getSongs()[--idx]; }
+};
+
+class RandomPlayStrategy : public PlayStrategy {
+    vector<Song*> rem;
+    stack<Song*> hist;
+public:
+    void setPlaylist(Playlist* p) override {
+        rem = p->getSongs();
+        while(!hist.empty()) hist.pop();
+    }
+    bool hasNext() override { return !rem.empty(); }
+    Song* next() override {
+        int i = rand() % rem.size();
+        Song* s = rem[i];
+        swap(rem[i], rem.back());
+        rem.pop_back();
+        hist.push(s);
+        return s;
+    }
+    bool hasPrevious() override { return !hist.empty(); }
+    Song* previous() override {
+        Song* s = hist.top(); hist.pop(); return s;
+    }
+};
+
+class CustomQueueStrategy : public SequentialPlayStrategy {
+    queue<Song*> q;
+public:
+    void addToNext(Song* s) override { q.push(s); }
+    Song* next() override {
+        if (!q.empty()) {
+            Song* s = q.front(); q.pop(); return s;
+        }
+        return SequentialPlayStrategy::next();
+    }
+};
+
+/* ===================== STRATEGY MANAGER ===================== */
+class StrategyManager {
+    static StrategyManager* instance;
+    SequentialPlayStrategy seq;
+    RandomPlayStrategy rnd;
+    CustomQueueStrategy cust;
+public:
+    static StrategyManager* getInstance() {
+        if (!instance) instance = new StrategyManager();
+        return instance;
+    }
+    PlayStrategy* get(PlayStrategyType t) {
+        if (t == PlayStrategyType::SEQUENTIAL) return &seq;
+        if (t == PlayStrategyType::RANDOM) return &rnd;
+        return &cust;
+    }
+};
+StrategyManager* StrategyManager::instance = nullptr;
+
+/* ===================== PLAYLIST MANAGER ===================== */
+class PlaylistManager {
+    static PlaylistManager* instance;
+    map<string, Playlist*> playlists;
+public:
+    static PlaylistManager* getInstance() {
+        if (!instance) instance = new PlaylistManager();
+        return instance;
+    }
+    void create(string n) { playlists[n] = new Playlist(n); }
+    void addSong(string p, Song* s) { playlists[p]->addSong(s); }
+    Playlist* get(string n) { return playlists[n]; }
+};
+PlaylistManager* PlaylistManager::instance = nullptr;
+
+/* ===================== FACADE ===================== */
+class MusicPlayerFacade {
+    static MusicPlayerFacade* instance;
+    AudioEngine engine;
+    Playlist* playlist;
+    PlayStrategy* strategy;
+public:
+    static MusicPlayerFacade* getInstance() {
+        if (!instance) instance = new MusicPlayerFacade();
+        return instance;
+    }
+    void connectDevice(DeviceType t) { DeviceManager::getInstance()->connect(t); }
+    void setStrategy(PlayStrategyType t) {
+        strategy = StrategyManager::getInstance()->get(t);
+    }
+    void loadPlaylist(string name) {
+        playlist = PlaylistManager::getInstance()->get(name);
+        strategy->setPlaylist(playlist);
+    }
+    void playSong(Song* s) {
+        engine.play(DeviceManager::getInstance()->getDevice(), s);
+    }
+    void pauseSong(Song* s) {
+        if (engine.currentSong() != s->getTitle())
+            throw runtime_error("Not playing this song");
+        engine.pause();
+    }
+    void playAll() {
+        while (strategy->hasNext()) {
+            playSong(strategy->next());
+        }
+    }
+    void playPrevious() {
+        if (strategy->hasPrevious())
+            playSong(strategy->previous());
+    }
+    void enqueueNext(Song* s) { strategy->addToNext(s); }
+};
+MusicPlayerFacade* MusicPlayerFacade::instance = nullptr;
+
+/* ===================== APPLICATION ===================== */
+class MusicPlayerApplication {
+    static MusicPlayerApplication* instance;
+    vector<Song*> library;
+public:
+    static MusicPlayerApplication* getInstance() {
+        if (!instance) instance = new MusicPlayerApplication();
+        return instance;
+    }
+    void addSong(string t, string a, string f) {
+        library.push_back(new Song(t,a,f));
+    }
+    Song* find(string t) {
+        for (auto s : library) if (s->getTitle() == t) return s;
+        return nullptr;
+    }
+};
+MusicPlayerApplication* MusicPlayerApplication::instance = nullptr;
+
+/* ===================== MAIN ===================== */
+int main() {
+    auto app = MusicPlayerApplication::getInstance();
+    app->addSong("Kesariya","Arijit","x");
+    app->addSong("Chaiyya","Sukhwinder","y");
+    app->addSong("Tum Hi Ho","Arijit","z");
+
+    PlaylistManager::getInstance()->create("Bollywood");
+    PlaylistManager::getInstance()->addSong("Bollywood", app->find("Kesariya"));
+    PlaylistManager::getInstance()->addSong("Bollywood", app->find("Chaiyya"));
+    PlaylistManager::getInstance()->addSong("Bollywood", app->find("Tum Hi Ho"));
+
+    auto facade = MusicPlayerFacade::getInstance();
+    facade->connectDevice(DeviceType::BLUETOOTH);
+    facade->setStrategy(PlayStrategyType::SEQUENTIAL);
+    facade->loadPlaylist("Bollywood");
+    facade->playAll();
+
+    return 0;
+}
