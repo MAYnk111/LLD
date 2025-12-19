@@ -1,0 +1,266 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+/* ===================== UTILITIES ===================== */
+class TimeUtils {
+public:
+    static string getCurrentTime() {
+        time_t now = time(0);
+        string t = ctime(&now);
+        t.pop_back();
+        return t;
+    }
+};
+
+/* ===================== FORWARD DECLARATIONS ===================== */
+class User;
+class Restaurant;
+class Cart;
+class Order;
+
+/* ===================== MENU ITEM ===================== */
+class MenuItem {
+    string code, name;
+    int price;
+public:
+    MenuItem(string c, string n, int p) : code(c), name(n), price(p) {}
+    string getCode() const { return code; }
+    string getName() const { return name; }
+    int getPrice() const { return price; }
+};
+
+/* ===================== PAYMENT STRATEGY (STRATEGY PATTERN) ===================== */
+class PaymentStrategy {
+public:
+    virtual void pay(double amount) = 0;
+    virtual ~PaymentStrategy() {}
+};
+
+class UpiPaymentStrategy : public PaymentStrategy {
+    string mobile;
+public:
+    UpiPaymentStrategy(string m) : mobile(m) {}
+    void pay(double amount) override {
+        cout << "Paid ₹" << amount << " via UPI (" << mobile << ")\n";
+    }
+};
+
+class CreditCardPaymentStrategy : public PaymentStrategy {
+    string card;
+public:
+    CreditCardPaymentStrategy(string c) : card(c) {}
+    void pay(double amount) override {
+        cout << "Paid ₹" << amount << " via Credit Card (" << card << ")\n";
+    }
+};
+
+/* ===================== RESTAURANT ===================== */
+class Restaurant {
+    static int nextId;
+    int id;
+    string name, location;
+    vector<MenuItem> menu;
+public:
+    Restaurant(string n, string l) : name(n), location(l) {
+        id = ++nextId;
+    }
+    string getName() const { return name; }
+    string getLocation() const { return location; }
+    void addMenuItem(MenuItem m) { menu.push_back(m); }
+    const vector<MenuItem>& getMenu() const { return menu; }
+};
+int Restaurant::nextId = 0;
+
+/* ===================== CART ===================== */
+class Cart {
+    Restaurant* restaurant = nullptr;
+    vector<MenuItem> items;
+public:
+    void setRestaurant(Restaurant* r) { restaurant = r; }
+    Restaurant* getRestaurant() { return restaurant; }
+    void addItem(MenuItem m) { items.push_back(m); }
+    vector<MenuItem> getItems() { return items; }
+    double total() {
+        double sum = 0;
+        for (auto &i : items) sum += i.getPrice();
+        return sum;
+    }
+    bool empty() { return items.empty(); }
+    void clear() { items.clear(); restaurant = nullptr; }
+};
+
+/* ===================== USER ===================== */
+class User {
+    int id;
+    string name, address;
+    Cart cart;
+public:
+    User(int i, string n, string a) : id(i), name(n), address(a) {}
+    string getName() const { return name; }
+    string getAddress() const { return address; }
+    Cart* getCart() { return &cart; }
+};
+
+/* ===================== ORDER (ABSTRACT) ===================== */
+class Order {
+protected:
+    static int nextOrderId;
+    int orderId;
+    User* user;
+    Restaurant* restaurant;
+    vector<MenuItem> items;
+    PaymentStrategy* payment;
+    double total;
+    string scheduled;
+public:
+    Order() {
+        orderId = ++nextOrderId;
+    }
+    virtual string getType() = 0;
+    void setUser(User* u) { user = u; }
+    void setRestaurant(Restaurant* r) { restaurant = r; }
+    void setItems(vector<MenuItem> it) { items = it; }
+    void setPayment(PaymentStrategy* p) { payment = p; }
+    void setScheduled(string s) { scheduled = s; }
+    void setTotal(double t) { total = t; }
+    User* getUser() { return user; }
+    Restaurant* getRestaurant() { return restaurant; }
+    vector<MenuItem>& getItems() { return items; }
+    double getTotal() { return total; }
+    string getScheduled() { return scheduled; }
+    void processPayment() { payment->pay(total); }
+};
+int Order::nextOrderId = 0;
+
+/* ===================== DELIVERY & PICKUP ORDERS ===================== */
+class DeliveryOrder : public Order {
+    string address;
+public:
+    string getType() override { return "Delivery"; }
+    void setAddress(string a) { address = a; }
+};
+
+class PickupOrder : public Order {
+    string address;
+public:
+    string getType() override { return "Pickup"; }
+    void setAddress(string a) { address = a; }
+};
+
+/* ===================== ORDER FACTORY (FACTORY PATTERN) ===================== */
+class OrderFactory {
+public:
+    virtual Order* create(User*, Cart*, Restaurant*, PaymentStrategy*, string) = 0;
+};
+
+class NowOrderFactory : public OrderFactory {
+public:
+    Order* create(User* user, Cart* cart, Restaurant* r, PaymentStrategy* pay, string type) override {
+        Order* o;
+        if (type == "Delivery") {
+            auto d = new DeliveryOrder();
+            d->setAddress(user->getAddress());
+            o = d;
+        } else {
+            auto p = new PickupOrder();
+            p->setAddress(r->getLocation());
+            o = p;
+        }
+        o->setUser(user);
+        o->setRestaurant(r);
+        o->setItems(cart->getItems());
+        o->setPayment(pay);
+        o->setScheduled(TimeUtils::getCurrentTime());
+        o->setTotal(cart->total());
+        return o;
+    }
+};
+
+/* ===================== SINGLETON MANAGERS ===================== */
+class RestaurantManager {
+    vector<Restaurant*> restaurants;
+    static RestaurantManager* instance;
+    RestaurantManager() {}
+public:
+    static RestaurantManager* getInstance() {
+        if (!instance) instance = new RestaurantManager();
+        return instance;
+    }
+    void add(Restaurant* r) { restaurants.push_back(r); }
+    vector<Restaurant*> search(string loc) {
+        vector<Restaurant*> res;
+        for (auto r : restaurants)
+            if (r->getLocation() == loc) res.push_back(r);
+        return res;
+    }
+};
+RestaurantManager* RestaurantManager::instance = nullptr;
+
+class OrderManager {
+    vector<Order*> orders;
+    static OrderManager* instance;
+    OrderManager() {}
+public:
+    static OrderManager* getInstance() {
+        if (!instance) instance = new OrderManager();
+        return instance;
+    }
+    void add(Order* o) { orders.push_back(o); }
+};
+OrderManager* OrderManager::instance = nullptr;
+
+/* ===================== NOTIFICATION SERVICE ===================== */
+class NotificationService {
+public:
+    static void notify(Order* o) {
+        cout << "\nOrder Placed Successfully!\n";
+        cout << "Type: " << o->getType() << endl;
+        cout << "User: " << o->getUser()->getName() << endl;
+        cout << "Restaurant: " << o->getRestaurant()->getName() << endl;
+        cout << "Total: ₹" << o->getTotal() << endl;
+        cout << "Time: " << o->getScheduled() << endl;
+    }
+};
+
+/* ===================== FACADE ===================== */
+class TomatoApp {
+public:
+    TomatoApp() {
+        auto r1 = new Restaurant("Bikaner", "Delhi");
+        r1->addMenuItem(MenuItem("P1", "Chole Bhature", 120));
+        r1->addMenuItem(MenuItem("P2", "Samosa", 15));
+        RestaurantManager::getInstance()->add(r1);
+    }
+
+    vector<Restaurant*> search(string loc) {
+        return RestaurantManager::getInstance()->search(loc);
+    }
+
+    Order* checkout(User* user, string type, PaymentStrategy* pay) {
+        NowOrderFactory f;
+        Order* o = f.create(user, user->getCart(),
+                            user->getCart()->getRestaurant(),
+                            pay, type);
+        OrderManager::getInstance()->add(o);
+        return o;
+    }
+};
+
+/* ===================== MAIN ===================== */
+int main() {
+    TomatoApp app;
+    User user(101, "Aditya", "Delhi");
+
+    auto restaurants = app.search("Delhi");
+    user.getCart()->setRestaurant(restaurants[0]);
+    user.getCart()->addItem(restaurants[0]->getMenu()[0]);
+    user.getCart()->addItem(restaurants[0]->getMenu()[1]);
+
+    Order* order = app.checkout(&user, "Delivery",
+        new UpiPaymentStrategy("9876543210"));
+
+    order->processPayment();
+    NotificationService::notify(order);
+
+    return 0;
+}
